@@ -1,0 +1,151 @@
+platform: template
+sensors:
+  den_occupancy_new:
+    value_template: >-
+      {#---This is the name of the sensor this template sensor represents.  #}
+      {#--- To find sections or lines that require editing, search this template for 'TEMPLATE EDIT REQUIRED' #}
+      {#--- To find sections or lines that have optional editing, search this template for 'TEMPLATE EDIT OPTIONAL' #}
+      {#--- This is the name of the sensor this template sensor represents.  #}
+      {% set THIS = "sensor.den_occupancy_new" %}{#-----TEMPLATE EDIT REQUIRED-----#}
+      
+      {#--- This is the settling duration for the sensor this template represents. This will 
+            lookup a helper of type 'input_number' and base the name of that helper on the
+            name of this sensor. If the calculated input_number helper does not exist this
+            template will attempt to use a system default of 
+            input_number.default_occupancy_settling_duration. #}
+      {% set SETTLING_DURATION = states('input_number.' + THIS.split('.')[1] + "_settling_duration")|replace('unknown', states('input_number.default_occupancy_settling_duration'))|replace('unknown', 30) %}
+      
+      {#--- This is the state of the sensor this template represents. #}
+      {% if states(THIS) != 'unknown' %}
+        {% set THIS__STATE = states(THIS) %}
+      {% else %}
+        {% set THIS__STATE = 'unoccupied' %}
+      {% endif %}
+      
+      {#--- DEFINE SENSORS
+            Below there are sections to devine your sensors.
+      
+            (1) Motion Sensor List Definition
+            (2) Power Sensor List Definition
+            (3) Use Sensor List Definition (a custom sensor)
+            (4) Occupancy Sensor List Definition (a custom sensor)
+      -------#}
+      
+      {#-----TEMPLATE EDIT REQUIRED-----#}
+      {#--- (1) Motion Sensor List Definition
+            Below is an array that contains the full name <domain>.<name> of each motion sensor
+            you would like to use to determine occupancy. If you do not have any motion sensors
+            do not delete this section. Just remove the sensors from the array and leave it as
+            a zero element array.
+      #}
+      {% set MOTION_SENSORS = [
+                              "binary_sensor.den_motion_sensor_group_motion",
+                              "binary_sensor.basement_kitchen_motion_sensor_motion"
+                             ]
+      %}
+      
+      {#-----TEMPLATE EDIT REQUIRED-----#}
+      {#--- (2) Power Sensor List Definition
+            Below is an array that contains the full name <domain>.<name> of each power sensor
+            you would like to use to determine occupancy. If you do not have any power sensors
+            do not delete this section. Just remove the sensors from the array and leave it as
+            a zero element array. #}
+      {% set POWER_SENSORS = [
+                              "sensor.den_tv_power",
+                              "sensor.den_xbox_power",
+                              "sensor.den_ps5_power"
+                             ]
+      %}
+      
+      {#-----TEMPLATE EDIT REQUIRED-----#}
+      {#--- (3) Use and Occupancy Sensor List Definition
+            Below is an array that contains the full name <domain>.<name> of each power sensor
+            you would like to use to determine occupancy. If you do not have any power sensors
+            do not delete this section. Just remove the sensors from the array and leave it as
+            a zero element array. #}
+      {% set USE_SENSORS = [
+                              "sensor.den_computer_use"
+                             ]
+      %}
+      
+      {#-----TEMPLATE EDIT REQUIRED-----#}
+      {#--- (3) Use and Occupancy Sensor List Definition
+            Below is an array that contains the full name <domain>.<name> of each power sensor
+            you would like to use to determine occupancy. If you do not have any power sensors
+            do not delete this section. Just remove the sensors from the array and leave it as
+            a zero element array. #}
+      {% set OCCUPANCY_SENSORS = [
+                             ]
+      %}
+      
+      {#--- Logic to determine if motion is active or inactive and the last_changed attribute
+            of each sensor, only saving the combined active state and combined last_changed
+            values. #}
+      {% if MOTION_SENSORS is defined %}
+        {% set MOTION = namespace(ACTIVE=false, LAST_CHANGED=99999999) %}
+        {% for SENSOR in MOTION_SENSORS %}
+          {% set MOTION.ACTIVE = ( MOTION.ACTIVE or states(SENSOR) ) %}
+          {% set MOTION.LAST_CHANGED = 
+            [
+              MOTION.LAST_CHANGED, 
+              ((as_timestamp(now()) - as_timestamp(states["binary_sensor"][SENSOR.split('.')[1]].last_changed))|int(0))
+            ]|min
+          %}  
+        {% endfor %}
+      {% endif %}
+      
+      {#--- Logic to determine if power is active or inactive. This is based on comparing
+            the current power usage value of the sensors compared against a predefined
+            input_number value. The input_number helper is assumed to be in the following 
+            format: input_number.<sensor_name|replace('power', 'off_power_level'). #}
+      {% if POWER_SENSORS is defined %}
+        {% set POWER = namespace(IN_USE=false) %}
+        {% for SENSOR in POWER_SENSORS %}
+          {% set POWER.IN_USE =
+            POWER.IN_USE or (states(SENSOR)|int(0)) > states('input_number.' + SENSOR.split('.')[1]|replace('power', 'off_power_level'))|int(0)
+          %}
+        {% endfor %}
+      {% endif %}
+      
+      {#--- Logic to determine if motion is active or inactive and the last_changed attribute
+            of each sensor, only saving the combined active state and combined last_changed
+            values. #}
+      {% if USE_SENSORS is defined %}
+        {% set USE = namespace( ACTIVE=false ) %}
+        {% for SENSOR in USE_SENSORS %}
+          {% set USE.ACTIVE = ( USE.ACTIVE or states( SENSOR )|replace( 'used', 'on' )|replace( 'unused', 'off' ) )%}
+        {% endfor %}
+      {% endif %}
+      
+      {#--- Logic to determine if motion is active or inactive and the last_changed attribute
+            of each sensor, only saving the combined active state and combined last_changed
+            values. #}
+      {% if OCCUPANCY_SENSORS is defined %}
+        {% set OCCUPANCY = namespace(ACTIVE=false) %}
+        {% for SENSOR in OCCUPANCY_SENSORS %}
+          {% set OCCUPANCY.ACTIVE = ( OCCUPANCY.ACTIVE or states( SENSOR )|replace( 'occupied', 'on' )|replace( 'unoccupied', 'off' ) )%}
+        {% endfor %}
+      {% endif %}
+      
+      {% set ACTIVITY = ( ( MOTION.ACTIVE == 'on' ) or POWER.IN_USE or ( USE.ACTIVE == 'on' ) or ( OCCUPANCY.ACTIVE == 'on' ) ) %}
+      {% set SETTLED = ( ( MOTION.ACTIVE == 'off' ) and ( MOTION.LAST_CHANGED >= 10 ) ) %}
+      
+      {#--- DETERMINE OCCUPIED STATE #}
+      {% if ACTIVITY %}
+        occupied
+      {% elif ( ACTIVITY == false and SETTLED == false ) %}
+        settling
+      {% elif ( SETTLED == true and ACTIVITY == false ) %}
+        unoccupied
+      {% else %}
+        {{ THIS__STATE }}
+      {% endif %}
+    friendly_name: "Den Occupancy New"
+    icon_template: >-
+      {% if states('sensor.den_occupancy_new') == 'occupied' %}
+        mdi:account-circle
+      {% elif states('sensor.den_occupancy_new') == 'settling' %}
+        mdi:account-reactivate-outline
+      {% else %}
+        mdi:account-circle-outline
+      {% endif %}
