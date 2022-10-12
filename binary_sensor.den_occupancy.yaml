@@ -1,5 +1,5 @@
 binary_sensor:
-  - name: "Den Occupancy Modern"
+  - name: "Den Occupancy"
     unique_id: e5912a62-9a42-4408-88c0-d393801c983e
     state: >-
       {#---This is the name of the sensor this template sensor represents.  #}
